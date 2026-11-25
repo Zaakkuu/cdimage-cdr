@@ -1,0 +1,9 @@
+TEMPLATE = app
+TARGET = cdimage-cli
+QT = core gui
+CONFIG += console
+INCLUDEPATH += src
+HEADERS += src/converter.h
+SOURCES += src/converter.cpp src/cli.cpp
+OBJECTS_DIR = build-cli
+MOC_DIR = build-cli

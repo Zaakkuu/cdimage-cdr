@@ -20,6 +20,8 @@
 //I acknowledge and am grateful to this developer for their contributions.
 
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "converter.h"
 
@@ -58,6 +60,17 @@ bool Converter::convert(const QImage img, const QString& filename)
 	double r = m_r0;
 	double dr = m_dtr * m_r0 / m_tr0;
 	int all=800*1024*1024;
+	// ponytail: tuning sweep, off unless SWEEP_LO and SWEEP_HI (percent) are set.
+	// Turn length drifts from x=LO to x=HI across the disc: tr = tr0*(1-x) + n*dtr*(1-2x)
+	// (same-capacity disc: faster scan speed x means pitch -x). Where x hits the real
+	// value, spokes show. Writes <track>.sweep.csv mapping radius -> x.
+	const char *sweepLo = getenv("SWEEP_LO"), *sweepHi = getenv("SWEEP_HI");
+	bool sweep = sweepLo && sweepHi;
+	double xLo = sweep ? atof(sweepLo)/100 : 0, xHi = sweep ? atof(sweepHi)/100 : 0;
+	double nEst = (-m_tr0 + sqrt(m_tr0*m_tr0 + 2*m_dtr*all)) / m_dtr;
+	long long turn = 0;
+	FILE *sweepLog = sweep ? fopen((filename + ".sweep.csv").toLocal8Bit().constData(), "w") : nullptr;
+	if (sweepLog) fprintf(sweepLog, "turn,radius_mm,x_percent,tr0_equiv,dtr_equiv\n");
     m_canceled = false;
 	double c=0;
 	int itr;
@@ -81,6 +94,14 @@ bool Converter::convert(const QImage img, const QString& filename)
             return false;
         }
         emit progressChanged(100*c/all);
+		if (sweep)
+		{
+			double x = xLo + (xHi - xLo) * turn / nEst;
+			tr = m_tr0*(1-x) + turn*m_dtr*(1-2*x);
+			if (sweepLog && turn % 500 == 0)
+				fprintf(sweepLog, "%lld,%.3f,%.4f,%.4f,%.9f\n", turn, r, x*100, m_tr0*(1-x), m_dtr*(1-2*x));
+		}
+		turn++;
 		itr = int(tr);
 		ri=ir*r/rcd;
 		for (long long i=0; i<itr; i++)
@@ -119,6 +140,7 @@ bool Converter::convert(const QImage img, const QString& filename)
 		if ((++zs)>=17) zs=0;
 	}
 	imageFile.close();
+	if (sweepLog) fclose(sweepLog);
     return true;
 }
 

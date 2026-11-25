@@ -1,3 +1,50 @@
+# CDImage (CD-R fork)
+
+Fork of [arduinocelentano/cdimage](https://github.com/arduinocelentano/cdimage) with a tested **CD-R** preset, a headless track maker, and notes on measuring a new disc instead of guessing.
+
+## Tested preset: Verbatim CD-R Extra Protection
+
+| Disc | ATIP | 1st track length | Track delta | Start radius |
+|---|---|---|---|---|
+| Verbatim CD-R 52x 700 MB 80 min "Extra Protection" (CMC Magnetics, phthalocyanine dye) | 97m26s66f, lead-out 79:59:71 | **23347.02** | **1.3899902** | **25.2766** |
+
+Burned in DAO at 10x with an LG GP60NS50 slim USB drive. The picture comes out straight across the whole disc. It is pale (the dye is light), so view it in a dark room with one small light held low and to the side. A light straight above only shows rainbows.
+
+The preset is in the GUI's list. Other batches of the same product may be made in another factory; check the ATIP (`wodim dev=/dev/sr0 -atip`) matches before using these numbers.
+
+## Headless track maker and burn script
+
+```
+mkdir build-cli && cd build-cli && qmake6 ../cdimage-cli.pro && make && cd ..
+./build-cli/cdimage-cli picture.png track.raw 23347.02 1.3899902 25.2766
+wodim -v dev=/dev/sr0 speed=10 -dao -audio track.raw
+```
+
+The picture is stretched to fill the whole disc: use a square image with the disc filling the frame (a ring from 25 mm to 58 mm, hole in the middle). `burn-picture.sh picture.png` does both steps for the preset above and checks a blank disc is in first (`DEV=/dev/srN` for another drive).
+
+## Measuring a new disc (instead of guessing)
+
+Guessing the two numbers is slow: they need 5-8 correct digits, and a wrong guess usually shows nothing at all. What worked:
+
+1. **Measure the spiral with the drive itself** using [disc-probe](https://github.com/Ashley-QwQ/disc-probe). Burn its random-data disc (`python -m discprobe random --media cd`, then `cdrdao write` with the toc it writes), then run `python -m discprobe geo --media cd --drive /dev/sr0`. Use a read speed where the drive spins at a fixed rate (CAV); `timing` tells you. It prints `u = r0/b` and `v = p/b`.
+2. **Convert to cdimage numbers** (24 audio bytes per 588 channel bits):
+   - track delta = 2π · v · 24/588
+   - 1st track length = 2π · u · 24/588 **+ track delta / 2**
+   - start radius = r0 printed by `geo`
+
+   The `+ track delta / 2` is needed because cdimage starts turn N at `tr0·N + dtr·N(N-1)/2` bytes, while a constant-pitch spiral needs `tr0·N + dtr·N²/2`. Without it the spokes twist by about 100° across the disc.
+3. **Burn the spokes test image** and fix the last constant. Drive timing cannot see exactly where the data starts along the track. That shows up as straight spokes that miss the centre slightly (twist mostly near the hub). Raise or lower the 1st track length by about `twist_in_turns / 0.343` (measured between 27 and 55 mm). On the disc above this was +0.16 (the leftover twist turned the same way as the uncorrected twist).
+
+That took 1 measuring disc and 2 spoke tests.
+
+`test-pics/spokes.png` and `test-pics/rings.png` are test patterns. Rings show even with wrong numbers (check the dye gives contrast); spokes only show once the numbers are right.
+
+### Calibration sweep (optional)
+
+Set `SWEEP_LO` and `SWEEP_HI` (percent) to make the numbers drift from the inner to the outer edge, assuming both disc speed and track pitch change together: `tr = tr0·(1-x) + n·dtr·(1-2x)`. A `<track>.sweep.csv` lists which numbers each radius used. This assumption turned out wrong for the disc above, so prefer measuring.
+
+---
+
 # CDImage
 ## A tool for burning visible pictures on a compact disc surface
 
